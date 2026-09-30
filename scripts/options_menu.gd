@@ -36,6 +36,10 @@ func _ready() -> void:
 
 	_header(list, "TIMING")
 	_slider(list, "Latency offset (ms)", -200.0, 200.0, 5.0, Settings.latency_ms, func(v): Settings.latency_ms = v)
+	var cal := UIKit.button("CALIBRATE AUDIO SYNC...", UIKit.AMBER, 24)
+	cal.custom_minimum_size = Vector2(420, 48)
+	cal.pressed.connect(_open_calibration)
+	list.add_child(cal)
 	_slider(list, "Hit window size", 0.7, 1.6, 0.05, Settings.timing_scale, func(v): Settings.timing_scale = v)
 
 	_header(list, "ACCESSIBILITY")
@@ -44,6 +48,8 @@ func _ready() -> void:
 	_toggle(list, "Reduce background animation", Settings.reduced_background, func(v): Settings.reduced_background = v)
 	_toggle(list, "Reduce particles", Settings.reduced_particles, func(v): Settings.reduced_particles = v)
 	_toggle(list, "Reduce squash / pop / hit-pause", Settings.reduced_animation, func(v): Settings.reduced_animation = v)
+	_toggle(list, "Screen effects (shader) - turn off if the game runs slowly", Settings.post_effects, func(v): Settings.post_effects = v)
+	_toggle(list, "Show FPS", Settings.show_fps, func(v): Settings.show_fps = v)
 	_toggle(list, "Alternative colours (arrows always stay distinct)", Settings.alt_colors, func(v): Settings.alt_colors = v)
 
 	_header(list, "KEYS  (click a slot, then press a key)")
@@ -126,6 +132,9 @@ func _refresh_keys() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	for c in get_children():
+		if c is CalibrationScreen:
+			return # calibration handles its own keys (incl. Esc)
 	if _rebind_lane >= 0 and event is InputEventKey and event.pressed and not event.echo:
 		if event.physical_keycode != KEY_ESCAPE:
 			Settings.input_profile.rebind(_rebind_lane, _rebind_slot, event.physical_keycode)
@@ -143,3 +152,10 @@ func _close() -> void:
 	Settings.notify_changed()
 	GameFeel.play_sfx("ui_back")
 	closed.emit()
+
+
+func _open_calibration() -> void:
+	var cal := CalibrationScreen.new()
+	add_child(cal)
+	cal.closed.connect(cal.queue_free)
+	cal.applied.connect(_close) # latency was saved; leave the options so the slider shows the new value next time

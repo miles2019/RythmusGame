@@ -35,6 +35,7 @@ var _tcol := PackedColorArray()
 var _ttext: Array[String] = []
 var _tburst := PackedByteArray()
 var _tc := 0
+var _any := false
 
 const HIT_WORDS := {
 	0: ["POW!", "BAM!", "ZAP!", "WHAM!", "KAPOW!"],
@@ -71,11 +72,13 @@ func clear() -> void:
 	_plife.fill(0.0)
 	_rlife.fill(0.0)
 	_tlife.fill(0.0)
+	_any = true
 	queue_redraw()
 
 
 func burst(pos: Vector2, color: Color, count: int, speed: float, psize := 6.0, life := 0.5,
 		dir := Vector2.UP, spread := TAU, kind := 0) -> void:
+	_any = true
 	count = roundi(count * Settings.fx_scale())
 	for i in count:
 		var idx := _pc
@@ -92,6 +95,7 @@ func burst(pos: Vector2, color: Color, count: int, speed: float, psize := 6.0, l
 
 
 func ring(pos: Vector2, color: Color, r0: float, r1: float, life := 0.35, width := 6.0, kind := 0) -> void:
+	_any = true
 	var idx := _rc
 	_rc = (_rc + 1) % MAX_R
 	_rp[idx] = pos
@@ -107,6 +111,7 @@ func ring(pos: Vector2, color: Color, r0: float, r1: float, life := 0.35, width 
 func float_text(pos: Vector2, text: String, color: Color, size := 28, life := 0.7, burst := false) -> void:
 	var idx := _tc
 	_tc = (_tc + 1) % MAX_T
+	_any = true
 	_tburst[idx] = 1 if burst else 0
 	_tp[idx] = pos
 	_tage[idx] = 0.0
@@ -140,6 +145,8 @@ func _on_miss_fx(lane: int, pos: Vector2) -> void:
 
 
 func _process(delta: float) -> void:
+	if not _any:
+		return # nothing alive: zero cost
 	var alive := false
 	for i in MAX_P:
 		if _plife[i] > 0.0:
@@ -160,8 +167,8 @@ func _process(delta: float) -> void:
 			_tage[i] += delta
 			if _tage[i] >= _tlife[i]:
 				_tlife[i] = 0.0
-	if alive:
-		queue_redraw()
+	queue_redraw() # also on the frame everything died, so nothing stale stays on screen
+	_any = alive
 
 
 func _draw() -> void:

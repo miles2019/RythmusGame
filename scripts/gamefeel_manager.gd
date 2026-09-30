@@ -12,27 +12,27 @@ signal miss_fx(lane: int, pos: Vector2)
 enum Rating { PERFECT, GREAT, GOOD, MISS }
 
 ## Base timing windows in seconds (half-width). Multiplied by Settings.timing_scale.
-const WINDOWS := [0.045, 0.090, 0.135]
+const WINDOWS := [0.040, 0.080, 0.115]
 
 ## One row per rating: everything a hit can trigger, in one table.
 const RATINGS := {
 	Rating.PERFECT: {
-		"name": "PERFECT", "color": Color("fff36b"), "score": 300, "stability": 2.0,
+		"name": "PERFECT", "color": Color("fff36b"), "score": 300, "stability": 1.6,
 		"rings": 2, "particles": 18, "stars": 5, "pop": 0.32, "shake": 0.22,
 		"hitstop": 0.055, "flash": 0.55, "pitch": 1.0, "sfx": "perfect", "camera_zoom": 0.018,
 	},
 	Rating.GREAT: {
-		"name": "GREAT", "color": Color("5cffc4"), "score": 200, "stability": 1.2,
+		"name": "GREAT", "color": Color("5cffc4"), "score": 200, "stability": 0.9,
 		"rings": 1, "particles": 10, "stars": 0, "pop": 0.22, "shake": 0.08,
 		"hitstop": 0.0, "flash": 0.3, "pitch": 1.0, "sfx": "great", "camera_zoom": 0.006,
 	},
 	Rating.GOOD: {
-		"name": "GOOD", "color": Color("6fb7ff"), "score": 100, "stability": 0.5,
+		"name": "GOOD", "color": Color("6fb7ff"), "score": 100, "stability": 0.3,
 		"rings": 0, "particles": 4, "stars": 0, "pop": 0.12, "shake": 0.0,
 		"hitstop": 0.0, "flash": 0.12, "pitch": 1.0, "sfx": "good", "camera_zoom": 0.0,
 	},
 	Rating.MISS: {
-		"name": "MISS", "color": Color("ff5a7a"), "score": 0, "stability": -6.0,
+		"name": "MISS", "color": Color("ff5a7a"), "score": 0, "stability": -8.0,
 		"rings": 0, "particles": 5, "stars": 0, "pop": 0.0, "shake": 0.32,
 		"hitstop": 0.0, "flash": 0.0, "pitch": 1.0, "sfx": "miss", "camera_zoom": 0.0,
 	},

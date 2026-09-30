@@ -47,7 +47,7 @@ func _draw_torso_detail() -> void:
 	draw_circle(box * Vector2(-12, -9), 2.5, Color("b6ff4a"))
 	if _dmg > 0.6:
 		# cracked box
-		draw_polyline(PackedVector2Array([mid + Vector2(-16, -12), mid + Vector2(-2, 0), mid + Vector2(-8, 6), mid + Vector2(10, 14)]), UIKit.INK, 3.0, true)
+		draw_polyline(PackedVector2Array([mid + Vector2(-16, -12), mid + Vector2(-2, 0), mid + Vector2(-8, 6), mid + Vector2(10, 14)]), UIKit.INK, 3.0)
 
 
 func _draw_front() -> void:
@@ -55,11 +55,11 @@ func _draw_front() -> void:
 	ink_poly(PackedVector2Array([_h(-34, -4), _h(-30, -26), _h(-8, -36), _h(14, -36), _h(32, -24), _h(34, -2),
 			_h(24, -14), _h(14, -2), _h(4, -16), _h(-8, -2), _h(-16, -16), _h(-26, -2)]), hair, 6.0)
 	# headphones (they crack when she is hurt)
-	draw_arc(_h(0, -2), 37.0 * HS, PI * 1.05, PI * 1.95, 14, UIKit.INK, 13.0, true)
-	draw_arc(_h(0, -2), 37.0 * HS, PI * 1.05, PI * 1.95, 14, Color("35e6ff"), 7.0, true)
+	draw_arc(_h(0, -2), 37.0 * HS, PI * 1.05, PI * 1.95, 14, UIKit.INK, 13.0)
+	draw_arc(_h(0, -2), 37.0 * HS, PI * 1.05, PI * 1.95, 14, Color("35e6ff"), 7.0)
 	for s in [-1.0, 1.0]:
 		ink_disc(_h(36.0 * s, 2), 11.0 * HS + pulse * 2.0, Color("35e6ff"))
 	if _dmg > 0.5:
-		draw_polyline(PackedVector2Array([_h(-36, -8), _h(-31, 0), _h(-38, 6), _h(-33, 14)]), UIKit.INK, 3.5, true)
+		draw_polyline(PackedVector2Array([_h(-36, -8), _h(-31, 0), _h(-38, 6), _h(-33, 14)]), UIKit.INK, 3.5)
 	# sticker star on cheek
 	draw_circle(_h(-22, 12), 5.0, Color("fff36b"))

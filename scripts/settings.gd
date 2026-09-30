@@ -23,6 +23,8 @@ var reduced_background := false
 var reduced_particles := false
 var reduced_animation := false  # dampens squash/pop/hit-pause, not gameplay
 var alt_colors := false
+var post_effects := true        # full-screen shader (aberration, damage vignette); off = faster on weak GPUs
+var show_fps := false
 var note_scale := 1.0           # 0.8 .. 1.4
 var latency_ms := 0.0           # positive = audio arrives late -> notes shift later
 var timing_scale := 1.0         # widens/narrows all hit windows
@@ -86,7 +88,7 @@ func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	for key in ["music_volume", "ui_volume", "hit_volume", "voice_volume", "screen_shake",
 			"reduced_background", "reduced_particles", "reduced_animation", "alt_colors",
-			"note_scale", "latency_ms", "timing_scale"]:
+			"note_scale", "latency_ms", "timing_scale", "post_effects", "show_fps"]:
 		cfg.set_value("options", key, get(key))
 	cfg.set_value("input", "keys", input_profile.to_array())
 	cfg.save(SAVE_PATH)
@@ -98,7 +100,7 @@ func load_settings() -> void:
 		return # first start: defaults
 	for key in ["music_volume", "ui_volume", "hit_volume", "voice_volume", "screen_shake",
 			"reduced_background", "reduced_particles", "reduced_animation", "alt_colors",
-			"note_scale", "latency_ms", "timing_scale"]:
+			"note_scale", "latency_ms", "timing_scale", "post_effects", "show_fps"]:
 		if cfg.has_section_key("options", key):
 			set(key, cfg.get_value("options", key))
 	input_profile.from_array(cfg.get_value("input", "keys", null))

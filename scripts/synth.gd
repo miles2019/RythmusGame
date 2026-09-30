@@ -4,17 +4,53 @@ extends RefCounted
 ## PLACEHOLDER AUDIO: songs and sounds here can be swapped for real recordings; uploaded
 ## songs (CustomSongs) already bypass this class completely.
 ##
-## Songs are rendered once per id on a worker thread and cached on disk (user://cache),
-## so the second start of a song is instant.
+## Songs are rendered once per id on a worker thread and cached on disk (user://cache).
+## While rendering, every drum hit / bass note / melody note is also recorded as an "event"
+## (strength, instrument, lane hint, length per sixteenth slot). Chart.build() turns those
+## events into notes, so the chart follows the music exactly instead of guessing.
 
 const SR := 22050
-const CACHE_VERSION := 4
+const CACHE_VERSION := 6
 const STEMS := ["drums", "bass", "lead", "pad"]
 
-static var _songs: Dictionary = {}     # id -> {"full": AudioStreamWAV, "length": float}
+# instrument ids stored in the event table
+const I_KICK := 0
+const I_SNARE := 1
+const I_BASS := 2
+const I_HOOK := 3
+const I_HAT := 4
+const I_STAB := 5
+const I_ARP := 6
+
+static var _songs: Dictionary = {}     # id -> {"full", "length", "onsets", "inst", "lanes", "lens"}
 static var _threads: Dictionary = {}   # id -> Thread
 static var _sfx: Dictionary = {}
 static var _mutex := Mutex.new()
+
+
+## Event table recorded while rendering (one entry per sixteenth slot of the whole song).
+class Rec extends RefCounted:
+	var strength := PackedByteArray()  # 0..100
+	var inst := PackedByteArray()
+	var lane := PackedByteArray()      # 0..3 lane hint, 255 = free choice
+	var length := PackedByteArray()    # sustain in sixteenth steps
+
+	func _init(n: int) -> void:
+		strength.resize(n)
+		inst.resize(n)
+		lane.resize(n)
+		length.resize(n)
+		lane.fill(255)
+
+	func add(slot: int, s: float, instrument: int, lane_hint := 255, len_steps := 1) -> void:
+		if slot < 0 or slot >= strength.size():
+			return
+		var v := int(clampf(s, 0.0, 1.0) * 100.0)
+		if v > strength[slot]:
+			strength[slot] = v
+			inst[slot] = instrument
+			lane[slot] = lane_hint
+			length[slot] = mini(len_steps, 255)
 
 
 # ---------------------------------------------------------------- public song API
@@ -69,6 +105,11 @@ static func _write_cache(path: String, res: Dictionary) -> void:
 	f.store_double(res.length)
 	f.store_32(w.data.size())
 	f.store_buffer(w.data)
+	f.store_32(res.onsets.size())
+	f.store_buffer(res.onsets)
+	f.store_buffer(res.inst)
+	f.store_buffer(res.lanes)
+	f.store_buffer(res.lens)
 
 
 static func _read_cache(path: String) -> Dictionary:
@@ -80,9 +121,17 @@ static func _read_cache(path: String) -> Dictionary:
 	var length := f.get_double()
 	var n := f.get_32()
 	var data := f.get_buffer(n)
-	if data.size() != n or n < 1000:
+	var ns := f.get_32()
+	if data.size() != n or n < 1000 or ns < 16:
 		return {}
-	return {"full": _wav_from_bytes(data, false), "length": length}
+	var onsets := f.get_buffer(ns)
+	var inst := f.get_buffer(ns)
+	var lanes := f.get_buffer(ns)
+	var lens := f.get_buffer(ns)
+	if lens.size() != ns:
+		return {}
+	return {"full": _wav_from_bytes(data, false), "length": length,
+			"onsets": onsets, "inst": inst, "lanes": lanes, "lens": lens}
 
 
 # ---------------------------------------------------------------- song rendering
@@ -98,12 +147,12 @@ static func _render_song(info: Dictionary) -> Dictionary:
 	rng.seed = int(info.get("seed", 1))
 	var full := PackedFloat32Array()
 	full.resize((bars + 1) * bar_len)
+	var rec := Rec.new(bars * 16)
 
 	var inst := _instruments(style, rng)
 	var root: int = info.root
 	var prog: Array = info.prog
 	var hook: Array = info.get("hook", [])
-	var hook_len := 32 # steps: hooks span 2 bars
 
 	for bar in bars:
 		var b0 := bar * bar_len
@@ -118,11 +167,11 @@ static func _render_song(info: Dictionary) -> Dictionary:
 		var gap_from := 12 if bar == 19 else 99 # one silent beat before the drop
 
 		if gd > 0.0:
-			_drums(full, inst, style, bar, b0, step, gd, gap_from)
+			_drums(full, rec, inst, style, bar, b0, step, gd, gap_from)
 		if gb > 0.0:
-			_bass(full, inst, style, chord_root, ivs, bar, b0, step, gb, gap_from)
+			_bass(full, rec, inst, style, chord_root, ivs, bar, b0, step, gb, gap_from)
 		if gl > 0.0:
-			_lead(full, inst, style, chord_root, ivs, hook, hook_len, root, bar, b0, step, gl, gap_from, spb)
+			_lead(full, rec, inst, style, chord_root, ivs, hook, root, bar, b0, step, gl, gap_from, spb)
 		if gp > 0.0:
 			var pad_chord: Array = []
 			for iv in ivs:
@@ -132,7 +181,8 @@ static func _render_song(info: Dictionary) -> Dictionary:
 	# transition sfx baked into the song: riser into the drop, impact on it
 	_mix(full, _riser_samples(rng), 20 * bar_len - SR, 0.6)
 	_mix(full, _impact_samples(rng), 20 * bar_len, 0.8)
-	return {"full": _to_wav(full, 0.8, false, true), "length": float(full.size()) / SR}
+	return {"full": _to_wav(full, 0.8, false, true), "length": float(full.size()) / SR,
+			"onsets": rec.strength, "inst": rec.inst, "lanes": rec.lane, "lens": rec.length}
 
 
 static func _instruments(style: String, rng: RandomNumberGenerator) -> Dictionary:
@@ -147,6 +197,18 @@ static func _instruments(style: String, rng: RandomNumberGenerator) -> Dictionar
 		"dnb":
 			d.kick = _kick(150.0, 50.0, 0.2, 13.0)
 			d.snare = _snare(rng, 0.2, 230.0, 14.0)
+		"trap":
+			d.kick = _kick(60.0, 36.0, 0.5, 5.0)
+			d.snare = _clap(rng)
+		"wave":
+			d.kick = _kick(110.0, 45.0, 0.3, 9.0)
+			d.snare = _snare(rng, 0.26, 200.0, 12.0)
+		"rave":
+			d.kick = _kick(190.0, 40.0, 0.4, 6.5)
+			d.snare = _clap(rng)
+		"finale":
+			d.kick = _kick(150.0, 46.0, 0.24, 11.0)
+			d.snare = _snare(rng, 0.2, 240.0, 13.0)
 		_:
 			d.kick = _kick(130.0, 42.0, 0.32, 8.0)
 			d.snare = _clap(rng)
@@ -157,7 +219,11 @@ static func _instruments(style: String, rng: RandomNumberGenerator) -> Dictionar
 	return d
 
 
-static func _drums(full: PackedFloat32Array, inst: Dictionary, style: String, bar: int, b0: int,
+static func _slot(bar: int, s: int) -> int:
+	return bar * 16 + s
+
+
+static func _drums(full: PackedFloat32Array, rec: Rec, inst: Dictionary, style: String, bar: int, b0: int,
 		step: float, g: float, gap_from: int) -> void:
 	var kicks: Array
 	var snares: Array
@@ -174,18 +240,33 @@ static func _drums(full: PackedFloat32Array, inst: Dictionary, style: String, ba
 		"dnb":
 			kicks = [0, 10]; snares = [4, 12]; ghosts = [7, 9, 15]
 			hats = [0, 2, 4, 6, 8, 10, 12, 14]; open_at = 11
+		"trap":
+			kicks = [0, 3, 10]; snares = [8]; ghosts = [15]
+			hats = [0, 2, 4, 6, 8, 10, 12, 13, 14, 15]; open_at = 6
+		"wave":
+			kicks = [0, 4, 8, 12]; snares = [4, 12]
+			hats = [2, 6, 10, 14, 1, 5, 9, 13]; open_at = 14
+		"rave":
+			kicks = [0, 4, 8, 12]; snares = [4, 12]; ghosts = [15]
+			hats = [2, 6, 10, 14, 3, 7, 11, 15]; open_at = 10
+		"finale":
+			kicks = [0, 3, 8, 10]; snares = [4, 12]; ghosts = [7, 15]
+			hats = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]; open_at = 14
 		_:
 			kicks = [0, 4, 8, 12]; snares = [4, 12]
 			hats = [2, 6, 10, 14, 1, 3, 5, 7, 9, 11, 13, 15]; open_at = 14
 	for s in kicks:
 		if s < gap_from:
 			_mix(full, inst.kick, b0 + int(s * step), 0.9 * g)
+			rec.add(_slot(bar, s), 0.95, I_KICK, 0 if s % 8 == 0 else 1)
 	for s in snares:
 		if s < gap_from:
 			_mix(full, inst.snare, b0 + int(s * step), 0.7 * g)
+			rec.add(_slot(bar, s), 0.9, I_SNARE, 2 if bar % 2 == 0 else 3)
 	for s in ghosts:
 		if s < gap_from:
 			_mix(full, inst.snare, b0 + int(s * step), 0.18 * g)
+			rec.add(_slot(bar, s), 0.3, I_SNARE, 255)
 	for s in hats:
 		if s >= gap_from:
 			continue
@@ -193,46 +274,65 @@ static func _drums(full: PackedFloat32Array, inst: Dictionary, style: String, ba
 		if style == "punk":
 			accent = 0.3
 		_mix(full, inst.open if s == open_at else inst.hat, b0 + int(s * step), accent * g)
-	if style == "punk" and bar % 4 == 0 and bar >= 4:
+		rec.add(_slot(bar, s), 0.4 if s == open_at else (0.32 if s % 4 == 2 else 0.2), I_HAT)
+	if (style == "punk" or style == "rave") and bar % 4 == 0 and bar >= 4:
 		_mix(full, inst.crash, b0, 0.22 * g)
+		rec.add(_slot(bar, 0), 0.8, I_SNARE, 3)
 	if bar % 4 == 3: # fill: snare roll crescendo
 		for k in 4:
 			var s := 12 + k
 			if s < gap_from:
 				_mix(full, inst.snare, b0 + int(s * step), (0.3 + k * 0.12) * g)
+				rec.add(_slot(bar, s), 0.55 + k * 0.1, I_SNARE, 2 + (k % 2))
 
 
-static func _bass(full: PackedFloat32Array, inst: Dictionary, style: String, chord_root: int, ivs: Array,
+static func _bass(full: PackedFloat32Array, rec: Rec, inst: Dictionary, style: String, chord_root: int, ivs: Array,
 		bar: int, b0: int, step: float, g: float, gap_from: int) -> void:
 	var low := chord_root
 	var notes: Array # [step, semitones, length_steps, gain]
 	match style:
 		"funk":
 			notes = [[0, 0, 2, 1.0], [3, 0, 1, 0.8], [6, 12, 1, 0.7], [7, 0, 1, 0.8], [10, 7, 2, 0.9], [12, 0, 2, 1.0], [15, 10, 1, 0.7]]
-		"punk":
+		"punk", "rave":
+			notes = []
+			if style == "rave":
+				for s in [2, 6, 10, 14]:
+					notes.append([s, 0, 2, 1.0])
+			else:
+				for s in range(0, 16, 2):
+					notes.append([s, 0 if s != 14 else 7, 2, 0.9])
+		"dnb", "finale":
+			notes = [[0, 0, 6, 1.0], [6, 0, 4, 0.9], [10, 7, 6, 1.0]]
+		"trap":
+			notes = [[0, 0, 8, 1.0], [8, 0, 3, 0.8], [12, 7, 4, 0.9]]
+		"wave":
 			notes = []
 			for s in range(0, 16, 2):
-				notes.append([s, 0 if s != 14 else 7, 2, 0.9])
-		"dnb":
-			notes = [[0, 0, 6, 1.0], [6, 0, 4, 0.9], [10, 7, 6, 1.0]]
+				notes.append([s, 12 if s % 4 == 2 else 0, 2, 0.9])
 		_:
 			notes = []
 			for s in range(0, 16, 2):
 				notes.append([s, 12 if s % 8 == 6 else 0, 2, 1.0 if s % 4 == 2 else 0.6])
+	var bstyle := style
+	if style == "finale":
+		bstyle = "dnb"
+	elif style == "rave":
+		bstyle = "punk"
 	for n in notes:
 		if n[0] >= gap_from:
 			continue
-		var key := "b%s_%d_%d_%s" % [style, low + n[1], n[2], str(bar % 2)]
+		var key := "b%s_%d_%d" % [bstyle, low + n[1], n[2]]
 		if not inst.cache.has(key):
-			inst.cache[key] = _bass_note(style, _mtof(low + n[1]), n[2] * step / SR)
+			inst.cache[key] = _bass_note(bstyle, _mtof(low + n[1]), n[2] * step / SR)
 		_mix(full, inst.cache[key], b0 + int(n[0] * step), 0.75 * g * n[3])
+		rec.add(_slot(bar, n[0]), 0.7 * n[3], I_BASS, (low + n[1]) % 2, n[2])
 
 
-static func _lead(full: PackedFloat32Array, inst: Dictionary, style: String, chord_root: int, ivs: Array,
-		hook: Array, hook_len: int, root: int, bar: int, b0: int, step: float, g: float, gap_from: int, spb: float) -> void:
+static func _lead(full: PackedFloat32Array, rec: Rec, inst: Dictionary, style: String, chord_root: int, ivs: Array,
+		hook: Array, root: int, bar: int, b0: int, step: float, g: float, gap_from: int, spb: float) -> void:
 	var sec := Chart.section_index(bar)
+	# chord layer
 	if style == "funk":
-		# off-beat chord stabs
 		for s in [2, 5, 10, 13]:
 			if s >= gap_from:
 				continue
@@ -240,18 +340,26 @@ static func _lead(full: PackedFloat32Array, inst: Dictionary, style: String, cho
 			if not inst.cache.has(key):
 				inst.cache[key] = _stab(ivs, chord_root + 24, 0.16)
 			_mix(full, inst.cache[key], b0 + int(s * step), 0.5 * g)
-	elif style == "punk":
-		for s in [0, 3, 6, 8, 11, 14]:
+			rec.add(_slot(bar, s), 0.62, I_STAB)
+	elif style == "punk" or style == "finale" or style == "rave":
+		var hits: Array = [0, 3, 6, 8, 11, 14]
+		if style == "rave":
+			hits = [2, 6, 10, 14]
+		for s in hits:
 			if s >= gap_from:
 				continue
 			var key := "p%d" % chord_root
 			if not inst.cache.has(key):
 				inst.cache[key] = _power(chord_root + 12, 0.3)
 			_mix(full, inst.cache[key], b0 + int(s * step), 0.42 * g)
-	else:
+			rec.add(_slot(bar, s), 0.7, I_STAB)
+	# arpeggio layer
+	if style == "house" or style == "dnb" or style == "wave" or style == "trap" or style == "finale":
 		var arp := [0, -1, 2, 1, -1, 1, 2, -1, 0, -1, 2, 3, 2, -1, 1, 0]
-		if style == "dnb":
+		if style == "dnb" or style == "finale":
 			arp = [0, 2, 1, 2, 0, 2, 1, 3, 0, 2, 1, 2, 3, 2, 1, 2]
+		elif style == "trap":
+			arp = [0, -1, -1, 2, -1, -1, 1, -1, 2, -1, -1, 3, -1, -1, 1, -1]
 		for s in 16:
 			var idx: int = arp[s]
 			if idx < 0 or s >= gap_from:
@@ -263,7 +371,8 @@ static func _lead(full: PackedFloat32Array, inst: Dictionary, style: String, cho
 			var at := b0 + int(s * step)
 			_mix(full, inst.cache[key], at, 0.42 * g)
 			_mix(full, inst.cache[key], at + int(0.75 * spb * SR), 0.14 * g) # echo tap
-	# sung hook (funk/punk) in the louder sections
+			rec.add(_slot(bar, s), 0.5, I_ARP, clampi(idx, 0, 3))
+	# sung hook (when the song has one) in the louder sections
 	if not hook.is_empty() and sec >= 2:
 		var local := (bar % 2) * 16
 		for h in hook:
@@ -276,8 +385,10 @@ static func _lead(full: PackedFloat32Array, inst: Dictionary, style: String, cho
 			var midi: int = root + 36 + int(h[1])
 			var key := "h%d_%d" % [midi, h[2]]
 			if not inst.cache.has(key):
-				inst.cache[key] = _hook_note(_mtof(midi), h[2] * step / SR, style == "punk")
+				inst.cache[key] = _hook_note(_mtof(midi), h[2] * step / SR, style == "punk" or style == "rave" or style == "finale")
 			_mix(full, inst.cache[key], b0 + int(st * step), 0.45 * g)
+			# melody contour -> lane: higher notes sit further right
+			rec.add(_slot(bar, st), 0.88, I_HOOK, clampi(int(h[1] * 4.0 / 13.0), 0, 3), h[2])
 
 
 static func _mtof(m: int) -> float:
@@ -298,7 +409,7 @@ static func _to_wav(buf: PackedFloat32Array, gain: float, loop := true, soft := 
 	var bytes := PackedByteArray()
 	bytes.resize(buf.size() * 2)
 	for i in buf.size():
-		var v := tanh(buf[i] * gain * 1.1) * 1.0 if soft else clampf(buf[i] * gain, -1.0, 1.0)
+		var v := tanh(buf[i] * gain * 1.1) if soft else clampf(buf[i] * gain, -1.0, 1.0)
 		bytes.encode_s16(i * 2, int(v * 32000.0))
 	return _wav_from_bytes(bytes, loop)
 
@@ -389,6 +500,15 @@ static func _bass_note(style: String, freq: float, dur: float) -> PackedFloat32A
 				var b := 2.0 * fposmod(freq * 1.006 * t, 1.0) - 1.0
 				lp += ((a + b) * 0.5 - lp) * (0.1 + 0.08 * sin(t * 12.0))
 				s = lp * 0.9 + sin(TAU * freq * t) * 0.6
+			"trap": # 808: sine with a pitch drop and soft clip
+				var f := freq * (1.0 + 0.6 * exp(-t * 40.0))
+				s = tanh(sin(TAU * f * t) * 1.8) * 0.9
+				env *= exp(-t * 1.2)
+			"wave": # bright plucked saw
+				var saw := 2.0 * fposmod(freq * t, 1.0) - 1.0
+				lp += (saw - lp) * (0.12 + 0.3 * exp(-t * 14.0))
+				s = lp * 0.9 + sin(TAU * freq * t) * 0.4
+				env *= exp(-t * 4.0)
 			_:
 				var saw := 2.0 * fposmod(freq * t, 1.0) - 1.0
 				lp += (saw - lp) * 0.16
@@ -568,3 +688,5 @@ static func _build_sfx() -> void:
 	_sfx["voice_lose"] = _to_wav(_seq([_tone(500, 420, 0.12, 10, 1, 0.35), _tone(380, 200, 0.3, 6, 1, 0.35)], 0.11), 0.8, false)
 	# dialogue blips for the story text (pitch-shifted per speaker at play time)
 	_sfx["blip"] = _to_wav(_tone(520, 480, 0.05, 40, 1, 0.3), 0.7, false)
+	# metronome click for the calibration screen
+	_sfx["click"] = _to_wav(_tone(1800, 1800, 0.04, 70, 0, 0.8), 0.9, false)

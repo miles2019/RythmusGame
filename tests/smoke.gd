@@ -37,6 +37,14 @@ func _ready() -> void:
 	scene = load("res://scenes/SongScene.tscn").instantiate()
 	add_child(scene)
 	scene.begin(info, diff, false)
+	for flag in args.slice(4):
+		match flag:
+			"nostage": scene.stage.visible = false; scene.stage.set_process(false)
+			"nochars": scene.player.visible = false; scene.rival.visible = false
+			"nofx": scene.fx.visible = false
+			"nopost": scene.post_fx.visible = false
+			"nohud": scene.hud.visible = false
+			"nolanes": scene.lanes_root.visible = false
 	scene.song_finished.connect(func(r):
 		print("RESULT ", r)
 		done = true
@@ -52,7 +60,13 @@ func _process(_delta: float) -> void:
 	if _shot_dir != "" and _shots.size() > 0 and t >= _shots[0]:
 		get_viewport().get_texture().get_image().save_png("%s/shot_%02d.png" % [_shot_dir, int(_shots[0])])
 		_shots.pop_front()
-	if mode != "miss":
+	if mode == "spam":
+		# button masher: taps a random lane every ~70 ms, ignoring the chart
+		if t > 0.0 and int(t * 14.0) != int((t - _delta) * 14.0):
+			var ln := rng.randi() % 4
+			scene.lanes[ln].press(t)
+			scene.lanes[ln].release(t + 0.02)
+	elif mode != "miss":
 		while idx < scene._chart.size() and scene._chart[idx].time <= t:
 			var n: Dictionary = scene._chart[idx]
 			idx += 1
@@ -64,8 +78,8 @@ func _process(_delta: float) -> void:
 		if t >= r[0]:
 			scene.lanes[r[1]].release(t)
 			release_at.erase(r)
-	if frames % 900 == 0:
-		print("t=%.1f score=%d combo=%d stab=%.0f dmg=%.2f" % [t, scene.score, scene.combo, scene.stability, scene.player.damage])
+	if frames % 600 == 0:
+		print("t=%.1f score=%d combo=%d stab=%.0f dmg=%.2f fps=%d proc=%.2fms draws=%d" % [t, scene.score, scene.combo, scene.stability, scene.player.damage, Engine.get_frames_per_second(), Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)])
 	if frames > 60 * 1000:
 		print("TIMEOUT")
 		get_tree().quit(1)

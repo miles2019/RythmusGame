@@ -112,6 +112,7 @@ func _process(delta: float) -> void:
 
 
 func _apply() -> void:
+	_rect.visible = Settings.post_effects
 	_mat.set_shader_parameter("aberration", _aberration)
 	_mat.set_shader_parameter("damage", _damage * (0.6 if Settings.reduced_animation else 1.0))
 	_mat.set_shader_parameter("ripple_t", _ripple)

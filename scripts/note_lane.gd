@@ -11,9 +11,10 @@ signal ghost_press(lane: int)
 const HIT_Y := 590.0
 const TOP_Y := -70.0
 const HOLD_RELEASE_GRACE := 0.12 ## releasing this close to the tail end still counts
+const EARLY_MISS := 0.22        ## a press this early before a note burns that note
 
 @export var lane_width := 112.0
-@export var scroll_speed := 520.0 ## px/s; approach time = (HIT_Y - TOP_Y) / speed
+@export var scroll_speed := 590.0 ## px/s, set per difficulty; approach time = (HIT_Y - TOP_Y) / speed
 
 var lane := 0
 var held: Note = null
@@ -23,6 +24,7 @@ var _active: Array[Note] = []
 var _down := 0
 var _note_scene: PackedScene
 var _hint := ""
+var _back: LaneBack
 
 
 func setup(lane_index: int, note_scene: PackedScene) -> void:
@@ -30,6 +32,10 @@ func setup(lane_index: int, note_scene: PackedScene) -> void:
 	_note_scene = note_scene
 	lane_width = 112.0 * maxf(1.0, Settings.note_scale * 0.95) # big notes get wider lanes
 	position = Vector2(640.0 + (lane - 1.5) * lane_width, 0.0)
+	_back = LaneBack.new()
+	_back.lane_node = self
+	_back.show_behind_parent = true
+	add_child(_back)
 	refresh_hint()
 	Settings.changed.connect(refresh_hint)
 
@@ -41,8 +47,9 @@ func _exit_tree() -> void:
 
 func refresh_hint() -> void:
 	_hint = Settings.input_profile.lane_hint(lane)
+	if _back:
+		_back.queue_redraw()
 	queue_redraw()
-
 
 func approach_time() -> float:
 	return (HIT_Y - TOP_Y) / scroll_speed
@@ -95,6 +102,13 @@ func press(t: float) -> bool:
 			continue
 		var dt := t - n.time
 		if dt < -good:
+			# Pressed clearly too early for the nearest note: that note is lost (no spam-hitting
+			# a note from afar). Further away than EARLY_MISS = a stray tap, handled below.
+			if dt >= -EARLY_MISS:
+				n.state = Note.State.MISSED
+				n.modulate = Color(1, 1, 1, 0.4)
+				note_missed.emit(n)
+				return false
 			break # sorted by time: everything after is even later
 		if absf(dt) > good:
 			continue # too late for this one, the miss check will collect it
@@ -183,17 +197,32 @@ func _release_visual() -> void:
 	queue_redraw()
 
 
+## Static lane decoration (strip, edges, key hint) in its own node: redrawn only when the key
+## hints or colours change, not every frame.
+class LaneBack extends Node2D:
+	var lane_node: NoteLane
+
+	func _draw() -> void:
+		if lane_node == null:
+			return
+		var w := lane_node.lane_width
+		var col := Settings.lane_color(lane_node.lane)
+		var strip := UIKit.INK
+		strip.a = 0.45
+		draw_rect(Rect2(-w * 0.5, -60, w, 800), strip)
+		var edge := col
+		edge.a = 0.35
+		draw_line(Vector2(-w * 0.5, -60), Vector2(-w * 0.5, 740), edge, 2.0)
+		draw_line(Vector2(w * 0.5, -60), Vector2(w * 0.5, 740), edge, 2.0)
+		# key hint: always visible, so the input display never depends on colour
+		var font := UIKit.font()
+		draw_string_outline(font, Vector2(-w * 0.5, HIT_Y + 84), lane_node._hint, HORIZONTAL_ALIGNMENT_CENTER, w, 20, 6, UIKit.INK)
+		draw_string(font, Vector2(-w * 0.5, HIT_Y + 84), lane_node._hint, HORIZONTAL_ALIGNMENT_CENTER, w, 20, UIKit.PAPER)
+
+
 func _draw() -> void:
 	var w := lane_width
 	var col := Settings.lane_color(lane)
-	# lane strip
-	var strip := UIKit.INK
-	strip.a = 0.45
-	draw_rect(Rect2(-w * 0.5, -60, w, 800), strip)
-	var edge := col
-	edge.a = 0.35
-	draw_line(Vector2(-w * 0.5, -60), Vector2(-w * 0.5, 740), edge, 2.0)
-	draw_line(Vector2(w * 0.5, -60), Vector2(w * 0.5, 740), edge, 2.0)
 	# press beam
 	if _down > 0:
 		var top := col
@@ -217,12 +246,6 @@ func _draw() -> void:
 		draw_circle(Vector2(0, HIT_Y), r * 1.5, Color(col.r, col.g, col.b, 0.25))
 	draw_set_transform(Vector2(0, HIT_Y))
 	draw_colored_polygon(pts, c)
-	draw_polyline(loop, UIKit.INK, 8.0, true)
-	draw_polyline(loop, col.lightened(0.3), 3.0, true)
+	draw_polyline(loop, UIKit.INK, 8.0)
+	draw_polyline(loop, col.lightened(0.3), 3.0)
 	draw_set_transform(Vector2.ZERO)
-	# key hint: always visible, so the input display never depends on colour
-	var font := UIKit.font()
-	var tw := _hint
-	draw_string_outline(font, Vector2(-w * 0.5, HIT_Y + 84), tw, HORIZONTAL_ALIGNMENT_CENTER, w, 20, 6, UIKit.INK)
-	draw_string(font, Vector2(-w * 0.5, HIT_Y + 84), tw, HORIZONTAL_ALIGNMENT_CENTER, w, 20,
-			Color.WHITE if _down > 0 else UIKit.PAPER)

@@ -85,6 +85,7 @@ var _dmg := 0.0                          ## smoothed damage
 var _impact := 0.0                       ## comic impact star timer after a hit
 var _boil := 0
 var _boil_t := 0.0
+var _redraw_acc := 0.0
 var _sprite: AnimatedSprite2D
 
 # skeleton, recomputed each draw
@@ -227,7 +228,10 @@ func _process(delta: float) -> void:
 			_sx = clampf(_sx + _sx_v * step, 0.6, 1.5)
 			_off_v += (-_off * 200.0 - _off_v * 12.0) * step
 			_off += _off_v * step
-	if _sprite == null:
+	# redraw at ~45 fps: the springs are smooth enough and drawing is the main cost of a character
+	_redraw_acc += delta
+	if _sprite == null and _redraw_acc >= 0.021:
+		_redraw_acc = 0.0
 		queue_redraw()
 
 
@@ -327,10 +331,10 @@ func _draw_face() -> void:
 				draw_line(c + Vector2(34, -22), c + Vector2(8, -12), UIKit.INK, 6.0)
 		1:
 			for s in [-1.0, 1.0]:
-				draw_arc(c + Vector2(15.0 * s, 0), 9.0, PI, TAU, 10, UIKit.INK, 5.5, true)
+				draw_arc(c + Vector2(15.0 * s, 0), 9.0, PI, TAU, 10, UIKit.INK, 5.5)
 		2:
-			draw_polyline(PackedVector2Array([c + Vector2(-27, -14), c + Vector2(-8, -3), c + Vector2(-27, 8)]), UIKit.INK, 5.5, true)
-			draw_polyline(PackedVector2Array([c + Vector2(33, -14), c + Vector2(14, -3), c + Vector2(33, 8)]), UIKit.INK, 5.5, true)
+			draw_polyline(PackedVector2Array([c + Vector2(-27, -14), c + Vector2(-8, -3), c + Vector2(-27, 8)]), UIKit.INK, 5.5)
+			draw_polyline(PackedVector2Array([c + Vector2(33, -14), c + Vector2(14, -3), c + Vector2(33, 8)]), UIKit.INK, 5.5)
 		4:
 			for s in [-1.0, 1.0]:
 				var e: Vector2 = c + Vector2(15.0 * s, -2)
@@ -341,7 +345,7 @@ func _draw_face() -> void:
 		ink_oval(mp, 8.0 + m * 3.0, 4.0 + m * 10.0, UIKit.INK)
 		draw_circle(mp + Vector2(0, 4.0 + m * 5.0), 5.0, Color("ff6b8a"))
 	elif eye_style == 1:
-		draw_arc(mp + Vector2(0, -5), 10.0, 0.2, PI - 0.2, 10, UIKit.INK, 4.5, true)
+		draw_arc(mp + Vector2(0, -5), 10.0, 0.2, PI - 0.2, 10, UIKit.INK, 4.5)
 	else:
 		draw_line(mp + Vector2(-7, 0), mp + Vector2(7, 0), UIKit.INK, 4.5)
 
@@ -363,10 +367,10 @@ func _draw_damage_face() -> void:
 		draw_circle(p, 2.0, Color("d9a066"))
 	if _dmg > 0.45:
 		# black eye: bruise ring around the near eye
-		draw_arc(c + Vector2(15, -4), 15.0, 0.0, TAU, 16, Color("7a3a9a"), 6.0, true)
+		draw_arc(c + Vector2(15, -4), 15.0, 0.0, TAU, 16, Color("7a3a9a"), 6.0)
 	if _dmg > 0.6:
 		# nose / mouth bleeding + missing tooth
-		draw_polyline(PackedVector2Array([c + Vector2(4, 12), c + Vector2(6, 22 + sin(_clock * 4.0) * 2.0), c + Vector2(4, 32)]), blood, 4.5, true)
+		draw_polyline(PackedVector2Array([c + Vector2(4, 12), c + Vector2(6, 22 + sin(_clock * 4.0) * 2.0), c + Vector2(4, 32)]), blood, 4.5)
 		draw_circle(c + Vector2(4, 33), 3.5, blood)
 		draw_circle(c + Vector2(12, 26), 3.0, Color("fff4dc"))
 	if _dmg > 0.75:
@@ -382,17 +386,17 @@ func _draw_damage_overlay() -> void:
 	var h := head_pos
 	if _dmg > 0.55:
 		# head bandage with a red stain
-		draw_arc(h + Vector2(0, -2), head_r - 4.0, PI * 1.12, PI * 1.88, 12, UIKit.INK, 15.0, true)
-		draw_arc(h + Vector2(0, -2), head_r - 4.0, PI * 1.12, PI * 1.88, 12, Color("fff4dc"), 10.0, true)
+		draw_arc(h + Vector2(0, -2), head_r - 4.0, PI * 1.12, PI * 1.88, 12, UIKit.INK, 15.0)
+		draw_arc(h + Vector2(0, -2), head_r - 4.0, PI * 1.12, PI * 1.88, 12, Color("fff4dc"), 10.0)
 		draw_circle(h + Vector2(14, -head_r + 4.0), 5.0, blood)
 	if _dmg > 0.4:
 		# forearm wrap + torn-sleeve zigzag on the shoulder
 		for k in 3:
 			var p := _hand_r.lerp(sh_r, 0.35 + k * 0.08)
 			draw_circle(p, 8.0, Color("fff4dc"))
-			draw_arc(p, 8.0, 0.0, TAU, 10, UIKit.INK, 2.5, true)
+			draw_arc(p, 8.0, 0.0, TAU, 10, UIKit.INK, 2.5)
 		draw_polyline(PackedVector2Array([sh_l + Vector2(-8, 4), sh_l + Vector2(0, 14), sh_l + Vector2(6, 6),
-				sh_l + Vector2(12, 18)]), UIKit.INK, 4.0, true)
+				sh_l + Vector2(12, 18)]), UIKit.INK, 4.0)
 	if _dmg > 0.3:
 		# scuff / bruise smudges on the torso
 		var m := hip.lerp(shoulder, 0.5)
@@ -422,7 +426,7 @@ func _draw_impact_star() -> void:
 	draw_colored_polygon(pts, Color(1.0, 0.95, 0.3, clampf(k * 1.6, 0.0, 1.0)))
 	var loop := pts.duplicate()
 	loop.append(pts[0])
-	draw_polyline(loop, Color(UIKit.INK, clampf(k * 1.6, 0.0, 1.0)), 5.0, true)
+	draw_polyline(loop, Color(UIKit.INK, clampf(k * 1.6, 0.0, 1.0)), 5.0)
 
 
 func _star(p: Vector2, r: float, color: Color) -> void:
@@ -432,7 +436,7 @@ func _star(p: Vector2, r: float, color: Color) -> void:
 	draw_colored_polygon(pts, color)
 	var loop := pts.duplicate()
 	loop.append(pts[0])
-	draw_polyline(loop, UIKit.INK, 2.5, true)
+	draw_polyline(loop, UIKit.INK, 2.5)
 
 
 # Subclass hooks (drawn in this order: back, legs, torso+detail, arms, head, face, front).
@@ -472,16 +476,16 @@ func ink_poly(pts: PackedVector2Array, fill: Color, ink_w := 7.0) -> void:
 	for i in pts.size():
 		o.append(pts[i] + _jit(i))
 	o.append(o[0])
-	draw_polyline(o, UIKit.INK, ink_w, true)
+	draw_polyline(o, UIKit.INK, ink_w)
 
 
 func ink_oval(center: Vector2, rx: float, ry: float, color: Color, outline := false) -> void:
 	var pts := PackedVector2Array()
-	for i in 16:
-		var a := i * TAU / 16.0
+	for i in 12:
+		var a := i * TAU / 12.0
 		pts.append(center + Vector2(cos(a) * rx, sin(a) * ry))
 	draw_colored_polygon(pts, color)
 	if outline or color != UIKit.INK:
 		var loop := pts.duplicate()
 		loop.append(pts[0])
-		draw_polyline(loop, UIKit.INK, 4.5, true)
+		draw_polyline(loop, UIKit.INK, 4.5)

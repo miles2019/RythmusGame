@@ -140,18 +140,25 @@ static func burst_points(center: Vector2, r_out: float, r_in: float, spikes: int
 	return pts
 
 
-## Halftone dot field (comic shading) clipped to a rect; call from a _draw().
-static func draw_halftone(ci: CanvasItem, rect: Rect2, color: Color, spacing := 14.0, max_r := 5.0, falloff_from := Vector2.ZERO) -> void:
-	var y := rect.position.y
-	var row := 0
-	while y < rect.end.y:
-		var x := rect.position.x + (spacing * 0.5 if row % 2 == 1 else 0.0)
-		while x < rect.end.x:
-			var d := 1.0
-			if falloff_from != Vector2.ZERO:
-				d = clampf(1.0 - Vector2(x, y).distance_to(falloff_from) / 700.0, 0.0, 1.0)
-			if d > 0.05:
-				ci.draw_circle(Vector2(x, y), max_r * d, color)
-			x += spacing
-		y += spacing * 0.5
-		row += 1
+static var _halftone_tex: ImageTexture
+
+
+## 24x24 tile with two dots (staggered): tiled by one draw call instead of ~1000 draw_circle calls.
+static func halftone_texture() -> ImageTexture:
+	if _halftone_tex == null:
+		var img := Image.create(24, 24, false, Image.FORMAT_RGBA8)
+		img.fill(Color(1, 1, 1, 0))
+		for c in [Vector2(6, 6), Vector2(18, 18)]:
+			for y in 24:
+				for x in 24:
+					var d := Vector2(x + 0.5, y + 0.5).distance_to(c)
+					var a := clampf(6.0 - d, 0.0, 1.0)
+					if a > 0.0:
+						img.set_pixel(x, y, Color(1, 1, 1, a))
+		_halftone_tex = ImageTexture.create_from_image(img)
+	return _halftone_tex
+
+
+## Halftone dot field (comic shading), tiled texture: a single cheap draw call.
+static func draw_halftone(ci: CanvasItem, rect: Rect2, color: Color, _spacing := 14.0, _max_r := 5.0, _falloff_from := Vector2.ZERO) -> void:
+	ci.draw_texture_rect(halftone_texture(), rect, true, color)

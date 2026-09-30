@@ -23,6 +23,7 @@ var _progress: ProgressLine
 var _pause_hint: Label
 var _diff: Label
 var _combo_shake := 0.0
+var _fps: Label
 
 
 ## Comic face used in the tug-of-war bar. mood: 0 happy, 1 neutral, 2 hurt, 3 knocked out.
@@ -38,16 +39,30 @@ static func draw_face(ci: CanvasItem, c: Vector2, r: float, kind: String, mood: 
 			skin = Color("f4f0e6"); hair = Color("120a24")
 		"clock":
 			skin = Color("8fa0b8"); hair = Color("3a4a64")
+		"bolt":
+			skin = Color("ffd9b8"); hair = Color("fff36b")
+		"queen":
+			skin = Color("f0c8d8"); hair = Color("7a2a9a")
+		"brute":
+			skin = Color("9ac27a"); hair = Color("2a2a2a")
+		"core":
+			skin = Color("2a1a44"); hair = Color("6a2aff")
 	# hair / back shapes
 	match kind:
 		"mika":
 			for s in [-1.0, 1.0]:
 				ci.draw_circle(c + Vector2(r * 0.95 * s, r * 0.35), r * 0.3 + 3.0, UIKit.INK)
 				ci.draw_circle(c + Vector2(r * 0.95 * s, r * 0.35), r * 0.3, hair)
-		"gum":
+		"gum", "bolt":
 			for k in 3:
 				var x := (k - 1) * r * 0.5
 				ci.draw_colored_polygon(PackedVector2Array([c + Vector2(x - 6, -r * 0.8), c + Vector2(x, -r * 1.55), c + Vector2(x + 6, -r * 0.8)]), hair)
+		"queen":
+			ci.draw_circle(c + Vector2(0, -r * 0.2), r * 1.3 + 3.0, UIKit.INK)
+			ci.draw_circle(c + Vector2(0, -r * 0.2), r * 1.3, hair)
+		"core":
+			for s in [-1.0, 1.0]:
+				ci.draw_colored_polygon(PackedVector2Array([c + Vector2(r * 0.6 * s, -r * 0.6), c + Vector2(r * 1.3 * s, -r * 1.6), c + Vector2(r * 0.9 * s, -r * 0.4)]), hair)
 		"kuro":
 			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-r, -r * 0.2), c + Vector2(-r * 0.6, -r * 1.45), c + Vector2(0, -r * 0.9),
 					c + Vector2(r * 0.6, -r * 1.5), c + Vector2(r, -r * 0.2)]), hair)
@@ -229,20 +244,21 @@ func _ready() -> void:
 	_timing = _text("", 22, Vector2(LEFT_X + 56, 350), COL_W - 56, HORIZONTAL_ALIGNMENT_LEFT, UIKit.PAPER)
 
 	_banner_bg = BurstBG.new()
-	_banner_bg.position = Vector2(880, 100)
-	_banner_bg.size = Vector2(380, 380)
+	_banner_bg.position = Vector2(950, 80)
+	_banner_bg.size = Vector2(300, 300)
 	_banner_bg.spikes = 13
 	_root.add_child(_banner_bg)
-	_banner = _text("", 40, Vector2(900, 240), 340, HORIZONTAL_ALIGNMENT_CENTER, UIKit.INK)
+	_banner = _text("", 32, Vector2(960, 190), 280, HORIZONTAL_ALIGNMENT_CENTER, UIKit.INK)
 	_banner.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_banner.size = Vector2(340, 120)
-	_banner.pivot_offset = Vector2(170, 60)
+	_banner.size = Vector2(280, 100)
+	_banner.pivot_offset = Vector2(140, 50)
 	_banner.add_theme_constant_override("outline_size", 0)
 	_banner.add_theme_constant_override("shadow_offset_x", 0)
 	_banner.add_theme_constant_override("shadow_offset_y", 0)
-	_banner_bg.pivot_offset = Vector2(190, 190)
+	_banner_bg.pivot_offset = Vector2(150, 150)
 
 	_pause_hint = _text("[ESC] PAUSE", 20, Vector2(900, 684), 340, HORIZONTAL_ALIGNMENT_RIGHT, UIKit.PAPER)
+	_fps = _text("", 18, Vector2(LEFT_X, 690), 200, HORIZONTAL_ALIGNMENT_LEFT, UIKit.LIME)
 	reset()
 
 
@@ -363,6 +379,9 @@ func show_banner(text: String, color: Color) -> void:
 
 
 func _process(delta: float) -> void:
+	_fps.visible = Settings.show_fps
+	if _fps.visible:
+		_fps.text = "%d FPS" % Engine.get_frames_per_second()
 	if _combo_shake > 0.0:
 		_combo_shake = maxf(_combo_shake - delta * 4.0, 0.0)
 		_combo_num.position.x = LEFT_X + sin(_combo_shake * 40.0) * 8.0 * _combo_shake * Settings.motion_scale()

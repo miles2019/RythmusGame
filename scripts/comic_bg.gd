@@ -43,13 +43,10 @@ func _draw() -> void:
 		var c := accent
 		c.a = 0.10 + pulse * 0.06
 		draw_colored_polygon(PackedVector2Array([centre, centre + Vector2.from_angle(a0) * 1400.0, centre + Vector2.from_angle(a1) * 1400.0]), c)
-	# halftone corners
+	# halftone over the whole screen (one tiled texture draw)
 	var dot := accent2
-	dot.a = 0.22
-	UIKit.draw_halftone(self, Rect2(0, 0, 460, 720), dot, 18.0, 7.0, Vector2(0, 720))
-	var dot2 := accent
-	dot2.a = 0.2
-	UIKit.draw_halftone(self, Rect2(820, 0, 460, 720), dot2, 18.0, 7.0, Vector2(1280, 0))
+	dot.a = 0.10
+	UIKit.draw_halftone(self, Rect2(0, 0, w, h), dot)
 	# tape stripes
 	for k in 2:
 		var y := 600.0 + k * 40.0

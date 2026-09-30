@@ -44,9 +44,118 @@ static func stem_gain(stem: String, bar: int) -> float:
 
 
 ## Returns notes sorted by time: {time, lane, dur, kind, pair} (pair = partner index or -1).
-static func build(info: Dictionary, diff: int) -> Array[Dictionary]:
+## Section threshold offsets for event charts: quiet intro/verse, dense drop.
+const SEC_OFF := [0.45, 0.22, 0.06, -0.05, 0.0, 0.3]
+const EV_BASE := [0.5, 0.34, 0.2]
+const EV_GAP := [0.20, 0.13, 0.095]   ## minimum seconds between two notes
+
+
+## Entry point. Built-in songs are charted from the events the synth recorded while rendering
+## (kick, snare, bass, melody ...), so the notes follow the music. Falls back to a template
+## when no events are available; uploaded songs use their analysed onsets.
+static func build(info: Dictionary, diff: int, song := {}) -> Array[Dictionary]:
 	if info.get("custom", false):
 		return build_custom(info, diff)
+	if song.has("onsets"):
+		return _build_from_events(info, diff, song)
+	return _build_template(info, diff)
+
+
+static func _build_from_events(info: Dictionary, diff: int, song: Dictionary) -> Array[Dictionary]:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(info.get("seed", 42)) * 10 + diff
+	var spb := 60.0 / float(info.bpm)
+	var onsets: PackedByteArray = song.onsets
+	var insts: PackedByteArray = song.inst
+	var lanes_h: PackedByteArray = song.lanes
+	var lens: PackedByteArray = song.lens
+	var notes: Array[Dictionary] = []
+	var busy := [0.0, 0.0, 0.0, 0.0]
+	var prev := 1
+	var last_t := -9.0
+	var hold_until := 0.0
+	var bars: int = info.bars
+	for i in onsets.size():
+		var bar := i / 16
+		var step := i % 16
+		if bar < 2 or bar >= bars - 2 or onsets[i] == 0:
+			continue
+		var s := float(onsets[i]) / 100.0
+		var sec := section_index(bar)
+		var inst: int = insts[i]
+		var thr: float = EV_BASE[diff] + SEC_OFF[sec] * [1.0, 1.0, 0.6][diff] - (int(info.get("stars", 2)) - 2) * 0.035
+		if s < thr:
+			continue
+		# which grid positions may carry a note
+		var on_quarter := step % 4 == 0
+		var on_eighth := step % 2 == 0
+		match diff:
+			Difficulty.EASY:
+				if not (on_quarter or (on_eighth and s >= 0.85 and sec >= 3)):
+					continue
+			Difficulty.NORMAL:
+				if not (on_eighth or (s >= 0.75 and sec >= 1)):
+					continue
+		var t := i * spb * 0.25
+		if t - last_t < EV_GAP[diff]:
+			continue
+		if diff == Difficulty.EASY and t < hold_until:
+			continue
+		var hint: int = lanes_h[i]
+		var lane := -1
+		if hint != 255 and busy[hint] <= t + 0.001 and rng.randf() < [0.45, 0.75, 0.8][diff]:
+			lane = hint
+		if lane < 0:
+			lane = _pick_lane(rng, prev, busy, t, -1)
+		if lane < 0:
+			continue
+		# sustained bass / melody notes become holds
+		var len_steps: int = lens[i]
+		var kind := Kind.NORMAL
+		var dur := 0.0
+		if (inst == Synth.I_BASS or inst == Synth.I_HOOK) and len_steps >= (6 if diff == Difficulty.EASY else 3) \
+				and step % 2 == 0 and s >= 0.6:
+			kind = Kind.HOLD
+			dur = minf(len_steps * 0.25 * spb * 0.9, 2.0 * spb)
+		# short bass holds give every song some sustain gameplay
+		if kind == Kind.NORMAL and inst == Synth.I_BASS and len_steps >= 2 and step % 8 == 0 and sec >= 2 \
+				and diff >= Difficulty.NORMAL and s >= 0.4 and rng.randf() < 0.5:
+			kind = Kind.HOLD
+			dur = spb * 0.9
+		# doubles on big moments (hook on the beat, crash), more of them on harder settings
+		var want_double := diff >= Difficulty.NORMAL and step % 4 == 0 and sec >= 2 and kind == Kind.NORMAL \
+				and ((inst == Synth.I_HOOK and s >= 0.8) or (step == 0 and bar % 4 == 0 and s >= 0.75)
+				or (diff == Difficulty.HARD and inst == Synth.I_KICK and step % 8 == 0 and sec >= 3))
+		if want_double:
+			var lane2 := _pick_lane(rng, lane, busy, t, lane)
+			if lane2 >= 0:
+				var i0 := notes.size()
+				notes.append({"time": t, "lane": lane, "dur": 0.0, "kind": Kind.DOUBLE, "pair": i0 + 1})
+				notes.append({"time": t, "lane": lane2, "dur": 0.0, "kind": Kind.DOUBLE, "pair": i0})
+				busy[lane] = t + spb * 0.3
+				busy[lane2] = t + spb * 0.3
+				prev = lane
+				last_t = t
+				continue
+		notes.append({"time": t, "lane": lane, "dur": dur, "kind": kind, "pair": -1})
+		busy[lane] = t + dur + spb * 0.25
+		if dur > 0.0:
+			hold_until = t + dur
+		prev = lane
+		last_t = t
+		# hard mode: a sixteenth "echo" note right after strong hits in the loud sections
+		if diff == Difficulty.HARD and kind == Kind.NORMAL and sec >= 3 and s >= 0.85 and rng.randf() < 0.4:
+			var t2 := t + spb * 0.25
+			var l2 := _pick_lane(rng, lane, busy, t2, -1)
+			if l2 >= 0 and i + 4 < onsets.size() - 32:
+				notes.append({"time": t2, "lane": l2, "dur": 0.0, "kind": Kind.NORMAL, "pair": -1})
+				busy[l2] = t2 + spb * 0.2
+				last_t = t2
+				prev = l2
+	return notes
+
+
+static func _build_template(info: Dictionary, diff: int) -> Array[Dictionary]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(info.get("seed", 42)) * 10 + diff
 	var spb := 60.0 / float(info.bpm)

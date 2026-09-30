@@ -19,7 +19,8 @@ const NOTE_SCENE := preload("res://scenes/Note.tscn")
 const LANE_SCENE := preload("res://scenes/NoteLane.tscn")
 const HOLD_TAIL_SCORE := 150
 const DOUBLE_BONUS := 100
-const RIVAL_COLORS := {"gum": Color("ffd23f"), "kuro": Color("35e6ff"), "null": Color("ff3b3b"), "clock": Color("b6ff4a")}
+const RIVAL_COLORS := {"gum": Color("ffd23f"), "kuro": Color("35e6ff"), "null": Color("ff3b3b"), "clock": Color("b6ff4a"),
+		"bolt": Color("ffb03b"), "queen": Color("b388ff"), "brute": Color("9ac27a"), "core": Color("ff3b3b")}
 
 @onready var stage: Stage = $Stage
 @onready var camera: CameraRig = $Camera
@@ -105,7 +106,7 @@ func begin(song_info: Dictionary, difficulty: int, no_fail_mode := false) -> voi
 	rival.set_variant(info.rival)
 	for l in lanes:
 		l.reset()
-	score = 0; combo = 0; max_combo = 0; stability = 60.0; doubles = 0; holds_ok = 0; _injury = 0.0
+	score = 0; combo = 0; max_combo = 0; stability = Difficulty.START_STABILITY[diff]; doubles = 0; holds_ok = 0; _injury = 0.0
 	counts = [0, 0, 0, 0]
 	_perfect_streak = 0
 	_next_spawn = 0
@@ -124,19 +125,22 @@ func begin(song_info: Dictionary, difficulty: int, no_fail_mode := false) -> voi
 	clock.first_beat = info.offset
 	clock.song_bars = info.bars
 	clock.length_override = info.duration if info.custom else 0.0
-	_chart = Chart.build(info, diff)
-	_spawned.clear()
-	_spawned.resize(_chart.size())
-
 	var stream: AudioStream = null
 	var length := 100.0
+	var song: Dictionary = {}
 	if info.custom:
 		stream = CustomSongs.load_stream(info)
 		length = info.duration
 	else:
-		var song := Synth.get_song(info)
+		song = Synth.get_song(info)
 		stream = song.get("full", null)
 		length = song.get("length", 100.0)
+	# Built-in charts are generated from the song's own note events, so they follow the music.
+	_chart = Chart.build(info, diff, song)
+	_spawned.clear()
+	_spawned.resize(_chart.size())
+	for l in lanes:
+		l.scroll_speed = Difficulty.SCROLL_SPEED[diff]
 	music.stream = stream
 	music.volume_db = 0.0
 	if stream == null:
@@ -310,7 +314,7 @@ func _player_takes_damage() -> void:
 
 
 func _update_damage() -> void:
-	var d := clampf(maxf((55.0 - stability) / 55.0, _injury), 0.0, 1.0)
+	var d := clampf(maxf((40.0 - stability) / 40.0, _injury), 0.0, 1.0)
 	player.damage = d
 	post_fx.set_damage(d * 0.85)
 
@@ -335,10 +339,23 @@ func _on_hold_finished(note: Note, success: bool) -> void:
 
 
 func _on_ghost_press(lane: int) -> void:
-	# A press with no note nearby is free (no penalty) but never silent: tiny tick + puff.
-	GameFeel.play_sfx("tick", Settings.BUS_HITS, 0.9 + lane * 0.08, -8.0)
-	fx.burst(_note_pos(lane), Settings.lane_color(lane), 3, 120.0, 4.0, 0.25, Vector2.UP, 1.0)
-	player.set_state(Character.State.INPUT_LEFT + lane)
+	# A tap with no note nearby is a STRAY TAP: it costs stability and the combo, so mashing
+	# all four keys no longer gets you through a song. It still gives instant feedback.
+	GameFeel.play_sfx("tick", Settings.BUS_HITS, 0.7, -4.0)
+	fx.burst(_note_pos(lane), Color("ff5a7a"), 3, 120.0, 4.0, 0.25, Vector2.UP, 1.0)
+	counts[GameFeel.Rating.MISS] += 1
+	_perfect_streak = 0
+	if combo > 0:
+		combo = 0
+		hud.set_combo(0)
+		combo_changed.emit(0)
+	stage.combo_fx = 0.0
+	_injury = minf(_injury + 0.03, 1.0)
+	_change_stability(-Difficulty.STRAY_LOSS[diff])
+	fx.float_text(_note_pos(lane) + Vector2(0, -60), "STRAY!", Color("ff5a7a"), 22, 0.5)
+	GameFeel.add_trauma(0.06)
+	hud.show_rating(GameFeel.Rating.MISS)
+	player.set_state(Character.State.MISS, 0.25)
 
 
 func _change_stability(delta: float) -> void:

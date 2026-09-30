@@ -1,4 +1,5 @@
 extends Node
+## Renders every built-in song, prints loudness and note counts / peak density per difficulty.
 func _ready() -> void:
 	for s in Songs.LIST:
 		var info := Songs.make_info(s)
@@ -8,18 +9,22 @@ func _ready() -> void:
 		var d := w.data
 		var n := d.size() / 2
 		var peak := 0
-		var clipped := 0
-		var sec_rms := []
-		var per := int(Synth.SR * 60.0 / info.bpm * 4.0 * 4.0)  # 4 bars
-		var acc := 0.0
-		for i in n:
-			var v := absi(d.decode_s16(i * 2))
-			peak = maxi(peak, v)
-			if v >= 31990:
-				clipped += 1
-			acc += float(v) * v
-			if (i + 1) % per == 0:
-				sec_rms.append(snappedf(sqrt(acc / per) / 32768.0, 0.01))
-				acc = 0.0
-		print("%s: %.1fs (load %d ms) peak=%.2f clipped=%d rms per 4 bars=%s" % [info.title, song.length, Time.get_ticks_msec() - t0, peak / 32768.0, clipped, sec_rms])
+		for i in range(0, n, 7):
+			peak = maxi(peak, absi(d.decode_s16(i * 2)))
+		var line := "%-16s %5.1fs load %4d ms peak %.2f | " % [info.title, song.length, Time.get_ticks_msec() - t0, peak / 32768.0]
+		for diff in 3:
+			var chart := Chart.build(info, diff, song)
+			var best := 0
+			var j := 0
+			for i in chart.size():
+				while chart[i].time - chart[j].time > 1.0:
+					j += 1
+				best = maxi(best, i - j + 1)
+			var holds := 0
+			var doubles := 0
+			for c in chart:
+				if c.kind == Chart.Kind.HOLD: holds += 1
+				if c.kind == Chart.Kind.DOUBLE: doubles += 1
+			line += "%s %d notes (peak %d/s, %d holds, %d dbl)  " % [Difficulty.SHORT_NAMES[diff], chart.size(), best, holds, doubles / 2]
+		print(line)
 	get_tree().quit()

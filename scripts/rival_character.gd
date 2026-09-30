@@ -34,6 +34,20 @@ func set_variant(v: String) -> void:
 			accent = Color("fff36b"); skin = Color("8fa0b8"); hair = Color("3a4a64")
 			body = Color("5a6c88"); legs = Color("2e3a52"); eye_color = Color("b6ff4a")
 			head_r = 42.0
+		"bolt":
+			accent = Color("ffb03b"); skin = Color("ffd9b8"); hair = Color("fff36b")
+			body = Color("2a8bff"); legs = Color("f4f0e6"); eye_color = Color("1a1a4a")
+		"queen":
+			accent = Color("fff36b"); skin = Color("f0c8d8"); hair = Color("7a2a9a")
+			body = Color("6a1a8a"); legs = Color("4a1060"); eye_color = Color("ff4fa3")
+		"brute":
+			accent = Color("ffb03b"); skin = Color("9ac27a"); hair = Color("2a2a2a")
+			body = Color("8a4a2a"); legs = Color("3a2a1a"); eye_color = Color("2a1a0a")
+			head_r = 46.0
+		"core":
+			accent = Color("ff3b3b"); skin = Color("1a0f2e"); hair = Color("6a2aff")
+			body = Color("0e0820"); legs = Color("0a0618"); eye_color = Color("ff3b3b")
+			head_r = 46.0
 		_:
 			accent = Color("35e6ff"); skin = Color("cfd8ff"); hair = Color("120a24")
 			body = Color("221548"); legs = Color("120a24"); eye_color = Color("35e6ff")
@@ -56,6 +70,16 @@ func _draw_head() -> void:
 
 
 func _draw_face() -> void:
+	if variant == "core":
+		_core_face()
+		return
+	if variant == "brute":
+		super._draw_face()
+		var c := head_pos + Vector2(5, 4)
+		draw_line(c + Vector2(-28, -22), c + Vector2(30, -22), UIKit.INK, 9.0) # unibrow
+		for s in [-1.0, 1.0]: # tusks
+			draw_colored_polygon(PackedVector2Array([c + Vector2(14.0 * s, 26), c + Vector2(22.0 * s, 26), c + Vector2(18.0 * s, 10)]), Color("fff4dc"))
+		return
 	match variant:
 		"clock":
 			_draw_monitor_face()
@@ -85,7 +109,7 @@ func _draw_monitor_face() -> void:
 	match eye_style:
 		1: # ^ ^
 			for s in [-1.0, 1.0]:
-				draw_polyline(PackedVector2Array([c + Vector2(14.0 * s - 10, 0), c + Vector2(14.0 * s, -10), c + Vector2(14.0 * s + 10, 0)]), col, 6.0, true)
+				draw_polyline(PackedVector2Array([c + Vector2(14.0 * s - 10, 0), c + Vector2(14.0 * s, -10), c + Vector2(14.0 * s + 10, 0)]), col, 6.0)
 		2, 4: # X X
 			for s in [-1.0, 1.0]:
 				draw_line(c + Vector2(14.0 * s - 9, -12), c + Vector2(14.0 * s + 9, 6), col, 6.0)
@@ -107,7 +131,7 @@ func _draw_skull_face() -> void:
 	for s in [-1.0, 1.0]:
 		var e: Vector2 = c + Vector2(15.0 * s, -4)
 		if eye_style == 1:
-			draw_arc(e, 9.0, PI, TAU, 10, UIKit.INK, 6.0, true)
+			draw_arc(e, 9.0, PI, TAU, 10, UIKit.INK, 6.0)
 		else:
 			ink_oval(e, 11.0, 14.0, UIKit.INK)
 			draw_circle(e + Vector2(2, 1), 4.0 + (2.0 if eye_style == 3 else 0.0), eye_color)
@@ -120,7 +144,83 @@ func _draw_skull_face() -> void:
 		draw_line(Vector2(x, c.y + 22 + m * 4.0), Vector2(x, c.y + 34 + m * 4.0), UIKit.INK, 3.5)
 
 
+func _core_face() -> void:
+	# three glaring eyes + a jagged maw; the eyes flare on the beat
+	var c := head_pos + Vector2(2, 2)
+	var r := 9.0 + pulse * 4.0
+	for p in [Vector2(-20, -6), Vector2(20, -6), Vector2(0, -22)]:
+		var e: Vector2 = c + p
+		var col := Color("ff3b3b") if eye_style != 4 else Color("555555")
+		draw_circle(e, r + 3.0, UIKit.INK)
+		draw_circle(e, r, col)
+		draw_circle(e + Vector2(0, 1), r * 0.4, UIKit.INK)
+	var m: float = _x[P_MOUTH]
+	var pts := PackedVector2Array()
+	for k in 9:
+		pts.append(c + Vector2(-26 + k * 6.5, 22 + (8.0 + m * 10.0 if k % 2 == 0 else 0.0)))
+	draw_polyline(pts, Color("ff3b3b"), 5.0)
+
+
+func _new_back() -> void:
+	match variant:
+		"bolt":
+			var a := shoulder + Vector2(0, -10)
+			var pts := PackedVector2Array([a + Vector2(-10, -90), a + Vector2(40, -20), a + Vector2(8, -20), a + Vector2(44, 70), a + Vector2(-30, -6), a + Vector2(2, -6)])
+			ink_poly(pts, Color(1.0, 0.95, 0.3, 0.55 + pulse * 0.4), 6.0)
+		"queen":
+			# huge hair poof behind the head
+			ink_disc(head_pos + Vector2(0, -8), head_r * 1.35, hair)
+		"core":
+			for k in 6:
+				var ang := _clock * 0.7 + k * TAU / 6.0
+				var p := head_pos + Vector2(cos(ang) * 92.0, sin(ang) * 54.0 - 10.0)
+				var tri := PackedVector2Array([p + Vector2(0, -16), p + Vector2(12, 12), p + Vector2(-12, 12)])
+				ink_poly(tri, Color(0.42, 0.16, 1.0, 0.85), 4.0)
+
+
+func _new_torso() -> void:
+	match variant:
+		"bolt":
+			draw_line(hip.lerp(shoulder, 0.1), hip.lerp(shoulder, 0.9), Color("f4f0e6"), 8.0)
+			ink_disc(hip.lerp(shoulder, 0.5) + Vector2(12, 0), 8.0, accent)
+		"queen":
+			ink_poly(PackedVector2Array([hip + Vector2(-22, 0), hip + Vector2(22, 0), hip + Vector2(56, 58), hip + Vector2(-56, 58)]), body, 7.0)
+			draw_line(hip + Vector2(-22, 4), hip + Vector2(22, 4), accent, 7.0)
+		"brute":
+			for s in [-1.0, 1.0]: # shoulder pads
+				ink_disc(shoulder + Vector2(28.0 * s, 4), 17.0, Color("b9b9c9"))
+			draw_line(hip + Vector2(-22, 6), hip + Vector2(22, 6), accent, 9.0)
+		"core":
+			var m := hip.lerp(shoulder, 0.5)
+			draw_polyline(PackedVector2Array([m + Vector2(-14, -20), m + Vector2(4, -4), m + Vector2(-6, 6), m + Vector2(14, 22)]), Color("ff3b3b").lerp(Color.WHITE, pulse * 0.5), 5.0)
+
+
+func _new_front() -> void:
+	var h := head_pos
+	match variant:
+		"bolt":
+			for k in 5:
+				var x := -30.0 + k * 15.0
+				ink_poly(PackedVector2Array([h + Vector2(x - 9, -head_r + 10), h + Vector2(x + sin(_clock * 5.0 + k) * 4.0, -head_r - 30 - (k % 2) * 14.0), h + Vector2(x + 9, -head_r + 10)]), hair, 5.0)
+			draw_line(h + Vector2(-head_r, -10), h + Vector2(head_r, -14), UIKit.INK, 12.0)
+			draw_line(h + Vector2(-head_r, -10), h + Vector2(head_r, -14), Color("ff3b3b"), 7.0)
+		"queen":
+			var cr := PackedVector2Array([h + Vector2(-30, -head_r + 4), h + Vector2(-34, -head_r - 26), h + Vector2(-16, -head_r - 10), h + Vector2(0, -head_r - 34),
+					h + Vector2(16, -head_r - 10), h + Vector2(34, -head_r - 26), h + Vector2(30, -head_r + 4)])
+			ink_poly(cr, accent, 6.0)
+		"brute":
+			draw_line(h + Vector2(-head_r, -16), h + Vector2(head_r, -20), UIKit.INK, 14.0)
+			draw_line(h + Vector2(-head_r, -16), h + Vector2(head_r, -20), Color("ff3b3b"), 8.0)
+		"core":
+			for s in [-1.0, 1.0]: # horns
+				var horn := PackedVector2Array([h + Vector2(34.0 * s, -head_r + 8), h + Vector2(62.0 * s, -head_r - 46), h + Vector2(46.0 * s, -head_r + 22)])
+				ink_poly(horn, hair, 5.0)
+
+
 func _draw_back() -> void:
+	if variant in ["bolt", "queen", "core"]:
+		_new_back()
+		return
 	match variant:
 		"kuro":
 			# rotating triangle halo behind the shoulders
@@ -129,8 +229,8 @@ func _draw_back() -> void:
 			for i in 3:
 				pts.append(c + Vector2.from_angle(_clock * 0.8 + i * TAU / 3.0 - PI / 2.0) * (86.0 + pulse * 10.0))
 			pts.append(pts[0])
-			draw_polyline(pts, UIKit.INK, 11.0, true)
-			draw_polyline(pts, accent.lerp(Color.WHITE, pulse * 0.4), 5.0, true)
+			draw_polyline(pts, UIKit.INK, 11.0)
+			draw_polyline(pts, accent.lerp(Color.WHITE, pulse * 0.4), 5.0)
 		"null":
 			# glitch bars flickering behind him
 			for k in 5:
@@ -148,6 +248,9 @@ func _draw_back() -> void:
 
 func _draw_torso_detail() -> void:
 	var glow := accent.lerp(Color.WHITE, pulse * 0.5)
+	if variant in ["bolt", "queen", "brute", "core"]:
+		_new_torso()
+		return
 	match variant:
 		"gum":
 			# hoodie pocket + smiley
@@ -155,12 +258,12 @@ func _draw_torso_detail() -> void:
 			ink_oval(m, 13.0, 13.0, Color("ff7ac8"), true)
 			draw_circle(m + Vector2(-4, -3), 2.0, UIKit.INK)
 			draw_circle(m + Vector2(4, -3), 2.0, UIKit.INK)
-			draw_arc(m + Vector2(0, 1), 6.0, 0.3, PI - 0.3, 8, UIKit.INK, 2.5, true)
+			draw_arc(m + Vector2(0, 1), 6.0, 0.3, PI - 0.3, 8, UIKit.INK, 2.5)
 		"kuro":
 			# long coat flaring below the hip + glowing triangle
 			ink_poly(PackedVector2Array([hip + Vector2(-22, 0), hip + Vector2(22, 0), hip + Vector2(38, 50), hip + Vector2(-38, 50)]), body.darkened(0.15))
 			var m := hip + lean_dir * 34.0
-			draw_polyline(PackedVector2Array([m + Vector2(-11, 11), m + Vector2(0, -13), m + Vector2(11, 11), m + Vector2(-11, 11)]), glow, 4.0, true)
+			draw_polyline(PackedVector2Array([m + Vector2(-11, 11), m + Vector2(0, -13), m + Vector2(11, 11), m + Vector2(-11, 11)]), glow, 4.0)
 			draw_line(hip + Vector2(-34, 46), hip + Vector2(34, 46), glow, 3.5)
 		"null":
 			ink_poly(PackedVector2Array([hip + Vector2(-22, 0), hip + Vector2(22, 0), hip + Vector2(42, 56), hip + Vector2(-42, 56)]), body.lightened(0.05))
@@ -180,6 +283,9 @@ func _draw_torso_detail() -> void:
 
 func _draw_front() -> void:
 	var h := head_pos
+	if variant in ["bolt", "queen", "brute", "core"]:
+		_new_front()
+		return
 	match variant:
 		"gum":
 			# neon mohawk
@@ -192,8 +298,8 @@ func _draw_front() -> void:
 			draw_line(_h(-6, -34), _h(10, -14), accent, 5.0)
 		"null":
 			# hood around the skull mask
-			draw_arc(h, head_r + 6.0, PI * 0.85, PI * 2.15, 16, UIKit.INK, 18.0, true)
-			draw_arc(h, head_r + 6.0, PI * 0.85, PI * 2.15, 16, body, 12.0, true)
+			draw_arc(h, head_r + 6.0, PI * 0.85, PI * 2.15, 16, UIKit.INK, 18.0)
+			draw_arc(h, head_r + 6.0, PI * 0.85, PI * 2.15, 16, body, 12.0)
 		"clock":
 			# bolt on the side
 			draw_circle(h + Vector2(-46, 0), 5.0, UIKit.INK)

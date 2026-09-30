@@ -50,7 +50,7 @@ func _process(delta: float) -> void:
 				_tap(KEY_ENTER); _log("menu: STORY MODE"); step = 1; t = 0.0
 		1:
 			if t > 1.8 and _find(SongSelect):
-				_log("story select up, cards=%d" % _find(SongSelect)._cards.size())
+				_log("story select up, cards=%d" % _find(SongSelect)._entries.size())
 				_tap(KEY_ENTER); step = 2; t = 0.0
 		2:
 			if t > 1.0 and _find(DialogueScreen):
@@ -61,7 +61,7 @@ func _process(delta: float) -> void:
 				t = 0.0
 				presses += 1
 				_tap(KEY_ENTER)
-				if presses > 14 or _find(LoadingScreen) or _find(SongScene):
+				if presses > 18 or _find(LoadingScreen) or _find(SongScene):
 					_log("dialogue done after %d presses" % presses); step = 4
 		4:
 			song = _find(SongScene) as Node
@@ -116,6 +116,6 @@ func _process(delta: float) -> void:
 				var ss = _find(SongSelect)
 				_log("back at story select=%s" % (ss != null))
 				if ss:
-					var c: SongCard = ss._cards[1]
+					var c: Dictionary = ss._entries[1]
 					_log("chapter 2 locked=%s (expect false)" % c.locked)
 				get_tree().quit()
