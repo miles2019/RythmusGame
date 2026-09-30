@@ -25,6 +25,8 @@ var reduced_animation := false  # dampens squash/pop/hit-pause, not gameplay
 var alt_colors := false
 var post_effects := true        # full-screen shader (aberration, damage vignette); off = faster on weak GPUs
 var show_fps := false
+var hit_sound_files: Array = ["", "", "", ""]  # per-lane custom hit sound (user://sounds/...), "" = default
+var _hit_streams: Array = [null, null, null, null]
 var note_scale := 1.0           # 0.8 .. 1.4
 var latency_ms := 0.0           # positive = audio arrives late -> notes shift later
 var timing_scale := 1.0         # widens/narrows all hit windows
@@ -88,7 +90,7 @@ func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	for key in ["music_volume", "ui_volume", "hit_volume", "voice_volume", "screen_shake",
 			"reduced_background", "reduced_particles", "reduced_animation", "alt_colors",
-			"note_scale", "latency_ms", "timing_scale", "post_effects", "show_fps"]:
+			"note_scale", "latency_ms", "timing_scale", "post_effects", "show_fps", "hit_sound_files"]:
 		cfg.set_value("options", key, get(key))
 	cfg.set_value("input", "keys", input_profile.to_array())
 	cfg.save(SAVE_PATH)
@@ -100,7 +102,59 @@ func load_settings() -> void:
 		return # first start: defaults
 	for key in ["music_volume", "ui_volume", "hit_volume", "voice_volume", "screen_shake",
 			"reduced_background", "reduced_particles", "reduced_animation", "alt_colors",
-			"note_scale", "latency_ms", "timing_scale", "post_effects", "show_fps"]:
+			"note_scale", "latency_ms", "timing_scale", "post_effects", "show_fps", "hit_sound_files"]:
 		if cfg.has_section_key("options", key):
 			set(key, cfg.get_value("options", key))
 	input_profile.from_array(cfg.get_value("input", "keys", null))
+	reload_hit_sounds()
+
+
+# ---------------------------------------------------------------- custom hit sounds
+
+const MAX_HIT_SOUND_SECONDS := 3.0
+
+
+func hit_stream(lane: int) -> AudioStream:
+	return _hit_streams[lane]
+
+
+func reload_hit_sounds() -> void:
+	for lane in 4:
+		_hit_streams[lane] = null
+		var path: String = hit_sound_files[lane] if hit_sound_files.size() > lane else ""
+		if path != "" and FileAccess.file_exists(path):
+			_hit_streams[lane] = CustomSongs.stream_from_bytes(FileAccess.get_file_as_bytes(path), path.get_extension())
+
+
+## Copies the picked file into user://sounds and uses it for that lane. Returns "" or an error text.
+func set_hit_sound(lane: int, src_path: String) -> String:
+	var ext := src_path.get_extension().to_lower()
+	if not CustomSongs.EXTENSIONS.has(ext):
+		return "Use an mp3, ogg or wav file."
+	var bytes := FileAccess.get_file_as_bytes(src_path)
+	var stream := CustomSongs.stream_from_bytes(bytes, ext)
+	if bytes.is_empty() or stream == null:
+		return "That file could not be decoded."
+	if stream.get_length() > MAX_HIT_SOUND_SECONDS:
+		return "Too long (max %d seconds) - hit sounds should be short." % int(MAX_HIT_SOUND_SECONDS)
+	clear_hit_sound(lane)
+	DirAccess.make_dir_recursive_absolute("user://sounds")
+	var dst := "user://sounds/hit_%d.%s" % [lane, ext]
+	var f := FileAccess.open(dst, FileAccess.WRITE)
+	if f == null:
+		return "Could not save the file."
+	f.store_buffer(bytes)
+	f.close()
+	hit_sound_files[lane] = dst
+	_hit_streams[lane] = stream
+	save_settings()
+	return ""
+
+
+func clear_hit_sound(lane: int) -> void:
+	var path: String = hit_sound_files[lane]
+	if path != "" and FileAccess.file_exists(path):
+		DirAccess.remove_absolute(path)
+	hit_sound_files[lane] = ""
+	_hit_streams[lane] = null
+	save_settings()

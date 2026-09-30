@@ -114,7 +114,11 @@ func trigger_hit(rating: int, lane: int, pos: Vector2, combo: int) -> void:
 	request_hitstop(prof.hitstop)
 	# Slight pitch climb with combo makes streaks audibly rewarding.
 	var pitch: float = prof.pitch * (1.0 + minf(combo, 50) * 0.002) * [0.94, 1.0, 1.06, 1.12][lane]
-	play_sfx(prof.sfx, Settings.BUS_HITS, pitch)
+	var custom := Settings.hit_stream(lane)
+	if custom != null:
+		play_stream(custom, Settings.BUS_HITS, 1.0, -2.0 if rating == Rating.GOOD else 0.0) # user sample: no pitch games
+	else:
+		play_sfx(prof.sfx, Settings.BUS_HITS, pitch)
 	hit_fx.emit(rating, lane, pos, prof)
 
 
@@ -130,7 +134,10 @@ func trigger_miss(lane: int, pos: Vector2) -> void:
 # ---------------------------------------------------------------- audio helper
 
 func play_sfx(sfx_name: String, bus := "UI", pitch := 1.0, volume_db := 0.0) -> void:
-	var stream := Synth.sfx(sfx_name)
+	play_stream(Synth.sfx(sfx_name), bus, pitch, volume_db)
+
+
+func play_stream(stream: AudioStream, bus := "UI", pitch := 1.0, volume_db := 0.0) -> void:
 	if stream == null or not _pools.has(bus):
 		return # missing asset must never crash
 	var arr: Array = _pools[bus]

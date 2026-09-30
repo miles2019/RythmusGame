@@ -9,6 +9,9 @@ var _rebind_slot := -1
 var _key_buttons: Array = []   # [lane][slot] -> Button
 var _hint: Label
 var _back: Button
+var _sound_labels: Array[Label] = []
+var _sound_dialog: FileDialog
+var _sound_lane := 0
 
 
 func _ready() -> void:
@@ -74,6 +77,41 @@ func _ready() -> void:
 		Settings.input_profile.reset_defaults()
 		_refresh_keys())
 	list.add_child(reset)
+
+	_header(list, "HIT SOUNDS  (your own sample per button, max 3 s)")
+	_sound_labels.clear()
+	for lane in InputProfile.LANES:
+		var srow := HBoxContainer.new()
+		srow.add_theme_constant_override("separation", 10)
+		var sname := UIKit.label(InputProfile.LANE_NAMES[lane], 22, Settings.lane_color(lane), 5)
+		sname.custom_minimum_size = Vector2(110, 0)
+		srow.add_child(sname)
+		var up := UIKit.button("UPLOAD", UIKit.LIME, 20)
+		up.custom_minimum_size = Vector2(130, 44)
+		up.pressed.connect(_pick_sound.bind(lane))
+		srow.add_child(up)
+		var test := UIKit.button("TEST", UIKit.CYAN, 20)
+		test.custom_minimum_size = Vector2(90, 44)
+		test.pressed.connect(_test_sound.bind(lane))
+		srow.add_child(test)
+		var dflt := UIKit.button("DEFAULT", UIKit.HOT, 20)
+		dflt.custom_minimum_size = Vector2(130, 44)
+		dflt.pressed.connect(_reset_sound.bind(lane))
+		srow.add_child(dflt)
+		var state := UIKit.label("", 18, UIKit.PAPER, 4)
+		srow.add_child(state)
+		_sound_labels.append(state)
+		list.add_child(srow)
+	_refresh_sound_labels()
+	_sound_dialog = FileDialog.new()
+	_sound_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	_sound_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_sound_dialog.use_native_dialog = true
+	_sound_dialog.title = "Choose a hit sound"
+	_sound_dialog.filters = PackedStringArray(["*.mp3, *.ogg, *.wav ; Audio files"])
+	_sound_dialog.size = Vector2i(900, 600)
+	_sound_dialog.file_selected.connect(_on_sound_file)
+	add_child(_sound_dialog)
 
 	_hint = UIKit.label("", 20, UIKit.LIME, 5)
 	col.add_child(_hint)
@@ -159,3 +197,37 @@ func _open_calibration() -> void:
 	add_child(cal)
 	cal.closed.connect(cal.queue_free)
 	cal.applied.connect(_close) # latency was saved; leave the options so the slider shows the new value next time
+
+
+func _pick_sound(lane: int) -> void:
+	_sound_lane = lane
+	_sound_dialog.popup_centered()
+
+
+func _on_sound_file(path: String) -> void:
+	var err := Settings.set_hit_sound(_sound_lane, path)
+	_hint.text = err if err != "" else "Hit sound for %s set." % InputProfile.LANE_NAMES[_sound_lane]
+	_refresh_sound_labels()
+	if err == "":
+		_test_sound(_sound_lane)
+
+
+func _test_sound(lane: int) -> void:
+	var s := Settings.hit_stream(lane)
+	if s != null:
+		GameFeel.play_stream(s, Settings.BUS_HITS)
+	else:
+		GameFeel.play_sfx("perfect", Settings.BUS_HITS)
+
+
+func _reset_sound(lane: int) -> void:
+	Settings.clear_hit_sound(lane)
+	_hint.text = "%s back to the default sound." % InputProfile.LANE_NAMES[lane]
+	_refresh_sound_labels()
+	_test_sound(lane)
+
+
+func _refresh_sound_labels() -> void:
+	for lane in _sound_labels.size():
+		var f: String = Settings.hit_sound_files[lane]
+		_sound_labels[lane].text = "custom: " + f.get_file() if f != "" else "default"
